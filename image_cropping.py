@@ -1,43 +1,30 @@
 import os
-import cv2
 import pandas as pd
+import cv2
 import time
+
+root_folder = ".\\images\\input"
+output_folder = '.\\images\\output'
+size = (256, 256)  # specify the desired size
+interpolation = cv2.INTER_LINEAR  # specify the interpolation method
+format = '.jpg'  # specify the desired output format
 
 time_start = time.time()
 
-root_folder = r'C:\Users\szawe\Desktop\GTSRB_Final_Training_Images\GTSRB\Final_Training\Images'
-output_folder = r'C:\Users\szawe\Desktop\Output'
-size = (64, 64)
-format = '.png'
-interpolation = cv2.INTER_CUBIC
-# interpolation = cv2.INTER_LINEAR_EXACT
-# interpolation = cv2.INTER_LINEAR
+for subdir, _, files in os.walk(root_folder):
 
-for subdir, dirs, files in os.walk(root_folder):
-    csv_file = None
     for file in files:
-        if file.endswith('.csv'):
-            csv_file = os.path.join(subdir, file)
-            break
-    if not csv_file:
-        continue
+        file_path = os.path.join(subdir, file)
+        if os.path.isfile(file_path):
+            img = cv2.imread(file_path)
+            if img is not None:
+                resized_img = cv2.resize(img, size, interpolation=interpolation)
+                output_file = os.path.splitext(file)[0] + format
+                output_path = os.path.join(output_folder, output_file)
+                
+                cv2.imwrite(output_path, resized_img)
+                
 
-    df = pd.read_csv(csv_file, sep=';')
-
-    relative_subdir = os.path.relpath(subdir, root_folder)
-    output_subfolder = os.path.join(output_folder, relative_subdir)
-    os.makedirs(output_subfolder, exist_ok=True)
-
-    for index, row in df.iterrows():
-        filename = row['Filename']
-        image = cv2.imread(os.path.join(subdir, filename))
-
-        x1, y1, x2, y2 = row['Roi.X1'], row['Roi.Y1'], row['Roi.X2'], row['Roi.Y2']
-        cropped = image[y1:y2, x1:x2]
-        resized = cv2.resize(cropped, size, interpolation=interpolation)
-
-        path = os.path.join(output_subfolder, f"cropped_{filename.split('.')[0]}{format}")
-        cv2.imwrite(path, resized)
 
     print(f"Processed {subdir}")
 

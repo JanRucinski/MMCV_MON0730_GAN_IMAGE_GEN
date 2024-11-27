@@ -1,9 +1,16 @@
-import keras
+
 import tensorflow as tf
+import keras
 
 
 
-image_path = 'images'
+image_path = ".\\images\\input\\data"
 
-IMAGE_SIZE = 64
+dataset = keras.utils.image_dataset_from_directory(
+    image_path,
+    labels=None,
+    crop_to_aspect_ratio=True,
+    image_size=(256, 256),
+)
 
+dataset.save("dataset", compression="gzip")
