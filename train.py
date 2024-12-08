@@ -4,6 +4,7 @@ import torchvision
 from constants import LATENT_DIM, IMAGE_SIZE, BATCH_SIZE, CHANNELS
 import time
 from torch.autograd import Variable
+from models.conv import Generator, Discriminator
 print(torch.cuda.is_available())    
 
 gpu = torch.device('cuda:0')
@@ -42,7 +43,7 @@ def train(epochs, dataset, generator, discriminator, start_epoch=0):
                 real_loss = loss(real_pred, real)
                 
                 # Fake images
-                z = torch.randn(batch_size, LATENT_DIM, device=gpu)
+                z = torch.randn(batch_size, LATENT_DIM,1,1, device=gpu)
                 fake_imgs = generator(z)
                 fake_pred = discriminator(fake_imgs.detach())
                 fake_loss = loss(fake_pred, fake)
@@ -56,7 +57,7 @@ def train(epochs, dataset, generator, discriminator, start_epoch=0):
                 optimizer_G.zero_grad()
                 
                 # Generate new fake images for generator training
-                z = torch.randn(batch_size, LATENT_DIM, device=gpu)
+                z = torch.randn(batch_size, LATENT_DIM,1,1,device=gpu)
                 fake_imgs = generator(z)
                 fake_pred = discriminator(fake_imgs)
                 
@@ -85,14 +86,13 @@ def sample_images(generator, epoch, latent_dim):
     
 if __name__ == "__main__":
     with torch.cuda.device(0):
-        from models.basictorch import Generator, Discriminator
         from dataset import get_dataset
         dataset = get_dataset()
         generator = Generator()
-        generator.load_state_dict(torch.load("saved_models\\generator_160.pth"))
+        #generator.load_state_dict(torch.load("saved_models\\generator_160.pth"))
         discriminator = Discriminator()
-        discriminator.load_state_dict(torch.load("saved_models\\discriminator_160.pth"))
-        train(300, dataset, generator, discriminator, start_epoch=161)
+        #discriminator.load_state_dict(torch.load("saved_models\\discriminator_160.pth"))
+        train(300, dataset, generator, discriminator, start_epoch=0)
         torch.save(generator.state_dict(), "saved_models\\generator.pth")
         torch.save(discriminator.state_dict(), "saved_models\\discriminator.pth")
    
