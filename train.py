@@ -1,105 +1,89 @@
-import keras
-import tensorflow as tf
-import numpy as np
-import matplotlib.pyplot as plt
-from models.basic import create_discriminator, create_generator
-from dataset import make_dataset
+import torch
 
-from constants import BATCH_SIZE, IMAGE_SIZE, LATENT_DIM, TOTAL_SAMPLES
+import torchvision
+from constants import LATENT_DIM, IMAGE_SIZE, BATCH_SIZE, CHANNELS
+import time
+from torch.autograd import Variable
+print(torch.cuda.is_available())    
 
-
-
+gpu = torch.device('cuda:0')
 
 
-def train(epochs, discriminator, generator ):
-    optimizer_discriminator = keras.optimizers.Adadelta(0.9)
-    optimizer_combined = keras.optimizers.Adadelta(learning_rate=0.9)
-    
-    valid = tf.ones(TOTAL_SAMPLES)
-    fake = np.zeros(TOTAL_SAMPLES)
-    dataset = make_dataset()
-    dataset_iter = iter(dataset)
 
-    # Compile the standalone discriminator
-    discriminator.compile(loss='binary_crossentropy', optimizer=optimizer_discriminator, metrics=['accuracy'])
+def train(epochs, dataset, generator, discriminator):
+    generator.to(gpu)
+    discriminator.to(gpu)
+    with torch.device(gpu):
+        loss = torch.nn.BCELoss()
+        optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+        optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+        real_label = 0.99  # Instead of 1
+        fake_label = 0.01  # Instead of 0
 
-    # Create a non-trainable clone of discriminator for the combined model
-    discriminator_for_combined = keras.models.clone_model(discriminator)
-    discriminator_for_combined.set_weights(discriminator.get_weights())
-    discriminator_for_combined.trainable = False
-
-    # Build and compile the combined model
-    
-    
-    combined = keras.models.Sequential(
-        [generator, discriminator_for_combined]
-    )
-    combined.compile(loss='binary_crossentropy', optimizer=optimizer_combined)
-
-    for epoch in range(epochs):
-        print(f"Epoch {epoch}")
-        
-        
-
-        try:
-
-            noise = tf.random.normal((TOTAL_SAMPLES, LATENT_DIM))     
-            dataset.shuffle(10000)
-            gen_imgs = generator.predict_on_batch(noise)
+        for epoch in range(epochs):
+            time_start = time.time()
+            for i, (imgs, _) in enumerate(dataset):
+                batch_size = imgs.size(0)
             
-            discriminator.trainable = True 
-            d_loss_real = discriminator.fit(dataset, verbose=1, epochs=1, steps_per_epoch=100, batch_size=BATCH_SIZE)
-            repeat = True
-            while repeat:
-                d_loss_fake = discriminator.fit(gen_imgs, fake, verbose=1,epochs=1, batch_size=BATCH_SIZE)
-                repeat = d_loss_fake.history["loss"][0] > 0.5
-            d_loss = 0.5 * np.add(d_loss_real.history["loss"][0], d_loss_fake.history["loss"][0])
-            d_acc = 0.5 * np.add(d_loss_real.history["accuracy"][0], d_loss_fake.history["accuracy"][0])
-        
-            
+                # Train Discriminator first
+                optimizer_D.zero_grad()
                 
-            discriminator.trainable = False
-            discriminator_for_combined.set_weights(discriminator.get_weights())
-            
-            repeat = True
-            while repeat:
-                noise = tf.random.normal((TOTAL_SAMPLES, LATENT_DIM))
-                g_loss = combined.fit(noise, valid, verbose=1,epochs=1,  batch_size=BATCH_SIZE).history["loss"][-1]
-                repeat = g_loss > 1
-            print(f"{epoch} [D loss: {d_loss} acc: {100 * d_acc} [G loss: {g_loss}]")
-        except Exception as e:
-            print(e)
-            continue      
-        if epoch % 1 == 0:
-            save_imgs(epoch, generator,[ x for x in iter(dataset.take(1))])
-        if epoch % 10 == 0:
-            generator.save(f".\\saved_models\\generator_{epoch}.keras")
-            discriminator.save(f".\\saved_models\\discriminator_{epoch}.keras")
-    
-    print("Training complete")
-            
-def save_imgs(epoch, generator, img):
-    r, c = 5, 5
-    noise = np.random.normal(0, 1, (r * c, LATENT_DIM))
-    gen_imgs = generator.predict(noise)
-    
-    gen_imgs = 0.5 * gen_imgs + 0.5
-    
-    fig, axs = plt.subplots(r, c)
-    cnt = 0
-    for i in range(r):
-        for j in range(c): 
-            axs[i,j].imshow(gen_imgs[cnt])
-            axs[i,j].axis('off')
-            cnt += 1
-    fig.savefig(f".\\output\\{epoch}.png")
-    plt.close()
+                # Add noise to images for stability
+                noise_factor = max(0.0, 0.1 * (1 - epoch/epochs))
+                real_imgs = imgs.to(gpu) + noise_factor * torch.randn_like(imgs.to(gpu))
+                real = torch.full((batch_size, 1), real_label, device=gpu)
+                fake = torch.full((batch_size, 1), fake_label, device=gpu)
+                
+                # Real images
+                real_pred = discriminator(real_imgs)
+                real_loss = loss(real_pred, real)
+                
+                # Fake images
+                z = torch.randn(batch_size, LATENT_DIM, device=gpu)
+                fake_imgs = generator(z)
+                fake_pred = discriminator(fake_imgs.detach())
+                fake_loss = loss(fake_pred, fake)
+                
+                # Train discriminator
+                d_loss = (real_loss + fake_loss) / 2
+                d_loss.backward()
+                optimizer_D.step()
+                
+                # Train Generator
+                optimizer_G.zero_grad()
+                
+                # Generate new fake images for generator training
+                z = torch.randn(batch_size, LATENT_DIM, device=gpu)
+                fake_imgs = generator(z)
+                fake_pred = discriminator(fake_imgs)
+                
+                # Generator tries to fool discriminator
+                g_loss = loss(fake_pred, real)
+                g_loss.backward()
+                optimizer_G.step()
+                
+                print(
+                    f"[Epoch {epoch}/{epochs}] [Batch {i}/{len(dataset)}] [D_fake loss: {fake_loss.item()}] [D_real loss: {real_loss.item()}] [G loss: {g_loss.item()}]"
+                )
+            print(f"Time taken: {time.time() - time_start}")
+            sample_images(generator, epoch, LATENT_DIM)
 
-try:
-    #loaded_generator = keras.models.load_model(".\\saved_models\\generator_40.keras")
-    #loaded_discriminator = keras.models.load_model(".\\saved_models\\discriminator_40.keras")
-    train(epochs=1000, discriminator=create_discriminator(), generator=create_generator()) 
-except Exception as e:
-    print(e)
-    print("An error occurred during training")
-    input("Press enter to continue...")
+        
+def sample_images(generator, epoch, latent_dim):
+    with torch.cuda.device(0):
+        z = torch.randn(5, latent_dim)
+        gen_imgs = generator(z)
+        torchvision.utils.save_image(gen_imgs[:5], f"output/{epoch}.png", nrow=5, normalize=True)
+    
+    
+if __name__ == "__main__":
+    with torch.cuda.device(0):
+        from models.basictorch import Generator, Discriminator
+        from dataset import get_dataset
+        dataset = get_dataset()
+        generator = Generator()
+        discriminator = Discriminator()
+        train(40, dataset, generator, discriminator)
+        torch.save(generator.state_dict(), "generator.pth")
+        torch.save(discriminator.state_dict(), "discriminator.pth")
+   

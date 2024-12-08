@@ -1,24 +1,23 @@
+import torch
+import torchvision
 
-import tensorflow as tf
-import keras
+from torch.utils.data import DataLoader
+from torchvision import datasets
+from constants import BATCH_SIZE, IMAGE_SIZE, LATENT_DIM
 
-from constants import BATCH_SIZE, IMAGE_SIZE
+img_path = "images\\input\\data"
 
-image_path = ".\\images\\input\\data\\collected_images"
 
-def make_dataset() -> tf.data.Dataset:
-    dataset = keras.utils.image_dataset_from_directory(
-        image_path,
-        labels=None,
-        crop_to_aspect_ratio=True,
-        image_size=(IMAGE_SIZE, IMAGE_SIZE),
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        
-    )
-    # Repeat the dataset indefinitely
-    dataset = dataset.map(lambda x: x / 255.0)
-    
-    dataset = dataset.repeat()  
-    dataset = dataset.map(lambda x: (x, tf.ones((BATCH_SIZE,))))
-    return dataset
+def get_dataset():
+    with torch.device('cuda:0'):
+        dataset = datasets.ImageFolder(
+            root=img_path,
+            transform=torchvision.transforms.Compose([
+                torchvision.transforms.Resize(IMAGE_SIZE),
+                torchvision.transforms.CenterCrop(IMAGE_SIZE),
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ])
+        )
+        dataset = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, generator=torch.Generator('cuda:0').manual_seed(2137))
+        return dataset
