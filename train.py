@@ -10,17 +10,20 @@ gpu = torch.device('cuda:0')
 
 
 
-def train(epochs, dataset, generator, discriminator):
+def train(epochs, dataset, generator, discriminator, start_epoch=0):
     generator.to(gpu)
     discriminator.to(gpu)
     with torch.device(gpu):
         loss = torch.nn.BCELoss()
-        optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-        optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+        #optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+        #optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+        optimizer_G = torch.optim.Adagrad(generator.parameters(), lr=0.0001, weight_decay=0.01)
+        optimizer_D = torch.optim.Adagrad(discriminator.parameters(), lr=0.0001, weight_decay=0.01)
         real_label = 0.99  # Instead of 1
         fake_label = 0.01  # Instead of 0
-
-        for epoch in range(epochs):
+        torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
+        for epoch in range(start_epoch,epochs+start_epoch):
             time_start = time.time()
             for i, (imgs, _) in enumerate(dataset):
                 batch_size = imgs.size(0)
@@ -63,8 +66,12 @@ def train(epochs, dataset, generator, discriminator):
                 optimizer_G.step()
                 
                 print(
-                    f"[Epoch {epoch}/{epochs}] [Batch {i}/{len(dataset)}] [D_fake loss: {fake_loss.item()}] [D_real loss: {real_loss.item()}] [G loss: {g_loss.item()}]"
+                    f"[Epoch {epoch}/{epochs+start_epoch}] [Batch {i}/{len(dataset)}] [D_fake loss: {fake_loss.item()}] [D_real loss: {real_loss.item()}] [G loss: {g_loss.item()}]"
                 )
+                
+            if epoch % 40 == 0:
+                torch.save(generator.state_dict(), f"saved_models\\generator_{epoch}.pth")
+                torch.save(discriminator.state_dict(), f"saved_models\\discriminator_{epoch}.pth")
             print(f"Time taken: {time.time() - time_start}")
             sample_images(generator, epoch, LATENT_DIM)
 
@@ -82,8 +89,10 @@ if __name__ == "__main__":
         from dataset import get_dataset
         dataset = get_dataset()
         generator = Generator()
+        generator.load_state_dict(torch.load("saved_models\\generator_160.pth"))
         discriminator = Discriminator()
-        train(40, dataset, generator, discriminator)
-        torch.save(generator.state_dict(), "generator.pth")
-        torch.save(discriminator.state_dict(), "discriminator.pth")
+        discriminator.load_state_dict(torch.load("saved_models\\discriminator_160.pth"))
+        train(300, dataset, generator, discriminator, start_epoch=161)
+        torch.save(generator.state_dict(), "saved_models\\generator.pth")
+        torch.save(discriminator.state_dict(), "saved_models\\discriminator.pth")
    
