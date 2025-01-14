@@ -21,3 +21,7 @@ def get_dataset():
         )
         dataset = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, generator=torch.Generator('cuda:0').manual_seed(2137))
         return dataset
+    
+
+def data_augumentation():
+    pass

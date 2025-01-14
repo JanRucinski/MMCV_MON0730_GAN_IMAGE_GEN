@@ -16,6 +16,8 @@ from copy import deepcopy
 
 import os
 
+from constants import BASE_DIM
+
 
 
 from models.trans import *
@@ -39,34 +41,49 @@ print("Device:",device)
 
 
 
-generator= Generator(depth1=5, depth2=4, depth3=2, initial_size=8, dim=384, heads=4, mlp_ratio=4, drop_rate=0.5)#,device = device)
+generator= Generator(depth1=5, depth2=4, depth3=2, initial_size=8, dim=, heads=4, mlp_ratio=4, drop_rate=0.5)#,device = device)
 generator.to(device)
 
-discriminator = Discriminator(diff_aug = args.diff_aug, image_size=32, patch_size=4, input_channel=3, num_classes=1,
+discriminator = Discriminator( image_size=32, patch_size=4, input_channel=3, num_classes=1,
                  dim=384, depth=7, heads=4, mlp_ratio=4,
                  drop_rate=0.)
 discriminator.to(device)
 
+class LinearLrDecay(object):
+    def __init__(self, optimizer, start_lr, end_lr, decay_start_step, decay_end_step):
+
+        assert start_lr > end_lr
+        self.optimizer = optimizer
+        self.delta = (start_lr - end_lr) / (decay_end_step - decay_start_step)
+        self.decay_start_step = decay_start_step
+        self.decay_end_step = decay_end_step
+        self.start_lr = start_lr
+        self.end_lr = end_lr
+
+    def step(self, current_step):
+        if current_step <= self.decay_start_step:
+            lr = self.start_lr
+        elif current_step >= self.decay_end_step:
+            lr = self.end_lr
+        else:
+            lr = self.start_lr - self.delta * (current_step - self.decay_start_step)
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = lr
+        return lr
+
+
+def inits_weight(m):
+        if type(m) == nn.Linear:
+                nn.init.xavier_uniform(m.weight.data, 1.)
 
 generator.apply(inits_weight)
 discriminator.apply(inits_weight)
 
-if args.optim == 'Adam':
-    optim_gen = optim.Adam(filter(lambda p: p.requires_grad, generator.parameters()), lr=args.lr_gen, betas=(args.beta1, args.beta2))
 
-    optim_dis = optim.Adam(filter(lambda p: p.requires_grad, discriminator.parameters()),lr=args.lr_dis, betas=(args.beta1, args.beta2))
+optim_gen = optim.Adam(filter(lambda p: p.requires_grad, generator.parameters()), lr=args.lr_gen, betas=(args.beta1, args.beta2))
+
+optim_dis = optim.Adam(filter(lambda p: p.requires_grad, discriminator.parameters()),lr=args.lr_dis, betas=(args.beta1, args.beta2))
     
-elif args.optim == 'SGD':
-    optim_gen = optim.SGD(filter(lambda p: p.requires_grad, generator.parameters()),
-                lr=args.lr_gen, momentum=0.9)
-
-    optim_dis = optim.SGD(filter(lambda p: p.requires_grad, discriminator.parameters()),
-                lr=args.lr_dis, momentum=0.9)
-
-elif args.optim == 'RMSprop':
-    optim_gen = optim.RMSprop(filter(lambda p: p.requires_grad, discriminator.parameters()), lr=args.lr_dis, eps=1e-08, weight_decay=args.weight_decay, momentum=0, centered=False)
-
-    optim_dis = optim.RMSprop(filter(lambda p: p.requires_grad, discriminator.parameters()), lr=args.lr_dis, eps=1e-08, weight_decay=args.weight_decay, momentum=0, centered=False)
 
 gen_scheduler = LinearLrDecay(optim_gen, args.lr_gen, 0.0, 0, args.max_iter * args.n_critic)
 dis_scheduler = LinearLrDecay(optim_dis, args.lr_dis, 0.0, 0, args.max_iter * args.n_critic)
