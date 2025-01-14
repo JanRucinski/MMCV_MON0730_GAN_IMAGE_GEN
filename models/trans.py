@@ -146,14 +146,13 @@ class Generator(nn.Module):
         return x
 
 class Discriminator(nn.Module):
-    def __init__(self, diff_aug, image_size=IMAGE_SIZE, patch_size=PATCH_SIZE, input_channel=CHANNELS, num_classes=1,
+    def __init__(self,  image_size=IMAGE_SIZE, patch_size=PATCH_SIZE, input_channel=CHANNELS, num_classes=1,
                  dim=BASE_DIM*16, depth=7, heads=4, mlp_ratio=4,
                  drop_rate=0.):
         super().__init__()
         if image_size % patch_size != 0:
             raise ValueError('Image size must be divisible by patch size.')
         num_patches = (image_size//patch_size) ** 2
-        self.diff_aug = diff_aug
         self.patch_size = patch_size
         self.depth = depth
         # Image patches and embedding layer
