@@ -16,9 +16,11 @@ from copy import deepcopy
 
 import os
 
-from constants import BASE_DIM
+from constants import *
 
+import torchvision.transforms as transforms
 
+from dataset import get_dataset
 
 from models.trans import *
 
@@ -41,11 +43,13 @@ print("Device:",device)
 
 
 
-generator= Generator(depth1=5, depth2=4, depth3=2, initial_size=8, dim=, heads=4, mlp_ratio=4, drop_rate=0.5)#,device = device)
+generator= Generator(depth1=5, depth2=4, depth3=2, initial_size=IMAGE_SIZE//4, dim=BASE_DIM*16, heads=4, mlp_ratio=4, drop_rate=0.5)#,device = device)
 generator.to(device)
 
-discriminator = Discriminator( image_size=32, patch_size=4, input_channel=3, num_classes=1,
-                 dim=384, depth=7, heads=4, mlp_ratio=4,
+
+
+discriminator = Discriminator( image_size=IMAGE_SIZE, patch_size=PATCH_SIZE, input_channel=CHANNELS, num_classes=1,
+                 dim=BASE_DIM*16, depth=7, heads=4, mlp_ratio=4,
                  drop_rate=0.)
 discriminator.to(device)
 
@@ -80,18 +84,16 @@ generator.apply(inits_weight)
 discriminator.apply(inits_weight)
 
 
-optim_gen = optim.Adam(filter(lambda p: p.requires_grad, generator.parameters()), lr=args.lr_gen, betas=(args.beta1, args.beta2))
+optim_gen = optim.Adam(filter(lambda p: p.requires_grad, generator.parameters()), lr=GEN_LEARNING_RATE, betas=(BETA1, BETA2))
 
-optim_dis = optim.Adam(filter(lambda p: p.requires_grad, discriminator.parameters()),lr=args.lr_dis, betas=(args.beta1, args.beta2))
+optim_dis = optim.Adam(filter(lambda p: p.requires_grad, discriminator.parameters()),lr=DIS_LEARNING_RATE, betas=(BETA1, BETA2))
     
 
-gen_scheduler = LinearLrDecay(optim_gen, args.lr_gen, 0.0, 0, args.max_iter * args.n_critic)
-dis_scheduler = LinearLrDecay(optim_dis, args.lr_dis, 0.0, 0, args.max_iter * args.n_critic)
+gen_scheduler = LinearLrDecay(optim_gen, GEN_LEARNING_RATE, 0.0, 0, MAX_ITER * CRITIC_ITERATIONS)
+dis_scheduler = LinearLrDecay(optim_dis, DIS_LEARNING_RATE, 0.0, 0, MAX_ITER * CRITIC_ITERATIONS)
 
 
-print("optim:",args.optim)
 
-fid_stat = 'fid_stat/fid_stats_cifar10_train.npz'
 
 writer=SummaryWriter()
 writer_dict = {'writer':writer}
@@ -121,9 +123,9 @@ def compute_gradient_penalty(D, real_samples, fake_samples, phi):
 
 
 def train(noise,generator, discriminator, optim_gen, optim_dis,
-        epoch, writer, schedulers, img_size=32, latent_dim = args.latent_dim,
-        n_critic = args.n_critic,
-        gener_batch_size=args.gener_batch_size, device="cuda:0"):
+        epoch, writer, schedulers, img_size=IMAGE_SIZE, latent_dim = LATENT_DIM,
+        n_critic = CRITIC_ITERATIONS,
+        gener_batch_size=BATCH_SIZE, device="cuda:0"):
 
 
     writer = writer_dict['writer']
@@ -134,8 +136,8 @@ def train(noise,generator, discriminator, optim_gen, optim_dis,
 
     transform = transforms.Compose([transforms.Resize(size=(img_size, img_size)),transforms.RandomHorizontalFlip(),transforms.ToTensor(),transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    train_set = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-    train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=30, shuffle=True)
+    #train_set = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    train_loader = get_dataset()
 
     for index, (img, _) in enumerate(train_loader):
 
@@ -151,11 +153,10 @@ def train(noise,generator, discriminator, optim_gen, optim_dis,
 
         fake_valid = discriminator(fake_imgs)
 
-        if args.loss == 'hinge':
-            loss_dis = torch.mean(nn.ReLU(inplace=True)(1.0 - real_valid)).to(device) + torch.mean(nn.ReLU(inplace=True)(1 + fake_valid)).to(device)
-        elif args.loss == 'wgangp_eps':
-            gradient_penalty = compute_gradient_penalty(discriminator, real_imgs, fake_imgs.detach(), args.phi)
-            loss_dis = -torch.mean(real_valid) + torch.mean(fake_valid) + gradient_penalty * 10 / (args.phi ** 2)         
+        
+        gradient_penalty = compute_gradient_penalty(discriminator, real_imgs, fake_imgs.detach(), PHI)
+        loss_dis = -torch.mean(real_valid) + torch.mean(fake_valid) + gradient_penalty * 10 / (PHI** 2)      
+     
 
         loss_dis.backward()
         optim_dis.step()
@@ -185,61 +186,45 @@ def train(noise,generator, discriminator, optim_gen, optim_dis,
             gen_step += 1
 
         if gen_step and index % 100 == 0:
-            sample_imgs = generated_imgs[:25]
+            sample_imgs = generated_imgs[:5]
             img_grid = make_grid(sample_imgs, nrow=5, normalize=True, scale_each=True)
-            save_image(sample_imgs, f'generated_images/generated_img_{epoch}_{index % len(train_loader)}.jpg', nrow=5, normalize=True, scale_each=True)            
+            save_image(sample_imgs, f'output/trans/generated_img_{epoch}_{index % len(train_loader)}.jpg', nrow=5, normalize=True, scale_each=True)            
             tqdm.write("[Epoch %d] [Batch %d/%d] [D loss: %f] [G loss: %f]" %
                 (epoch+1, index % len(train_loader), len(train_loader), loss_dis.item(), gener_loss.item()))
 
 
 
-def validate(generator, writer_dict, fid_stat):
 
-
-        writer = writer_dict['writer']
-        global_steps = writer_dict['valid_global_steps']
-
-        generator = generator.eval()
-        fid_score = get_fid(fid_stat, epoch, generator, num_img=5000, val_batch_size=60*2, latent_dim=1024, writer_dict=None, cls_idx=None)
-
-
-        print(f"FID score: {fid_score}")
-
-        writer.add_scalar('FID_score', fid_score, global_steps)
-
-        writer_dict['valid_global_steps'] = global_steps + 1
-        return fid_score
 
 
 
 best = 1e4
 
+def noise(n_samples, z_dim, device):
+        return torch.randn(n_samples,z_dim).to(device)
 
-for epoch in range(args.epoch):
+generator.load_state_dict(torch.load("saved_models\\trans\\generator_18.pth"))
+discriminator.load_state_dict(torch.load("saved_models\\trans\\discriminator_18.pth"))
+for epoch in range(100):
 
-    lr_schedulers = (gen_scheduler, dis_scheduler) if args.lr_decay else None
+    lr_schedulers = (gen_scheduler, dis_scheduler) 
 
     train(noise, generator, discriminator, optim_gen, optim_dis,
-    epoch, writer, lr_schedulers,img_size=32, latent_dim = args.latent_dim,
-    n_critic = args.n_critic,
-    gener_batch_size=args.gener_batch_size)
+    epoch, writer, lr_schedulers,img_size=IMAGE_SIZE, latent_dim = LATENT_DIM,
+    n_critic = CRITIC_ITERATIONS,
+    gener_batch_size=BATCH_SIZE)
 
     checkpoint = {'epoch':epoch, 'best_fid':best}
     checkpoint['generator_state_dict'] = generator.state_dict()
     checkpoint['discriminator_state_dict'] = discriminator.state_dict()
+    torch.save(generator.state_dict(), "saved_models\\trans\\generator_{epoch}.pth".format(epoch=epoch))
+    torch.save(discriminator.state_dict(), "saved_models\\trans\\discriminator_{epoch}.pth".format(epoch=epoch))
 
-    score = validate(generator, writer_dict, fid_stat)
 
-    print(f'FID score: {score} - best ID score: {best} || @ epoch {epoch+1}.')
-    if epoch == 0 or epoch > 30:
-        if score < best:
-            save_checkpoint(checkpoint, is_best=(score<best), output_dir=args.output_dir)
-            print("Saved Latest Model!")
-            best = score
+   
 
 
 checkpoint = {'epoch':epoch, 'best_fid':best}
 checkpoint['generator_state_dict'] = generator.state_dict()
 checkpoint['discriminator_state_dict'] = discriminator.state_dict()
-score = validate(generator, writer_dict, fid_stat) ####CHECK AGAIN
-save_checkpoint(checkpoint,is_best=(score<best), output_dir=args.output_dir)
+save_checkpoint(checkpoint, output_dir="saved_models", is_best=True)

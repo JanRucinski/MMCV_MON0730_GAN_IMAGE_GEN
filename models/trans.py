@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from data_aug import DiffAugment
 from constants import LATENT_DIM, IMAGE_SIZE, BATCH_SIZE, CHANNELS, PATCH_SIZE, HEADS, BASE_DIM
 
 class MLP(nn.Module):
@@ -50,7 +50,7 @@ class Attention(nn.Module):
         return x
 
 class ImgPatches(nn.Module):
-    def __init__(self, input_channel=CHANNELS, dim=BASE_DIM*16, patch_size=PATCH_SIZE):
+    def __init__(self, input_channel=CHANNELS, dim=BASE_DIM*32, patch_size=PATCH_SIZE):
         super().__init__()
         self.patch_embed = nn.Conv2d(input_channel, dim,
                                      kernel_size=patch_size, stride=patch_size)
@@ -99,7 +99,7 @@ class TransformerEncoder(nn.Module):
         return x
 
 class Generator(nn.Module):
-    def __init__(self, depth1=5, depth2=4, depth3=2, initial_size=8, dim=BASE_DIM*16, heads=4, mlp_ratio=4, drop_rate=0.):#,device=device):
+    def __init__(self, depth1=5, depth2=4, depth3=2, initial_size=IMAGE_SIZE/4, dim=BASE_DIM*16, heads=4, mlp_ratio=4, drop_rate=0.):#,device=device):
         super(Generator, self).__init__()
 
         #self.device = device
@@ -112,11 +112,11 @@ class Generator(nn.Module):
         self.mlp_ratio = mlp_ratio
         self.droprate_rate =drop_rate
 
-        self.mlp = nn.Linear(1024, (self.initial_size ** 2) * self.dim)
+        self.mlp = nn.Linear(LATENT_DIM, (self.initial_size ** 2) * self.dim)
 
-        self.positional_embedding_1 = nn.Parameter(torch.zeros(1, (8**2), BASE_DIM*16))
-        self.positional_embedding_2 = nn.Parameter(torch.zeros(1, (8*2)**2, BASE_DIM*4))
-        self.positional_embedding_3 = nn.Parameter(torch.zeros(1, (8*4)**2, BASE_DIM))
+        self.positional_embedding_1 = nn.Parameter(torch.zeros(1, (self.initial_size**2), BASE_DIM*16))
+        self.positional_embedding_2 = nn.Parameter(torch.zeros(1, (self.initial_size*2)**2, BASE_DIM*4))
+        self.positional_embedding_3 = nn.Parameter(torch.zeros(1, (self.initial_size*4)**2, BASE_DIM))
 
         self.TransformerEncoder_encoder1 = TransformerEncoder(depth=self.depth1, dim=self.dim,heads=self.heads, mlp_ratio=self.mlp_ratio, drop_rate=self.droprate_rate)
         self.TransformerEncoder_encoder2 = TransformerEncoder(depth=self.depth2, dim=self.dim//4, heads=self.heads, mlp_ratio=self.mlp_ratio, drop_rate=self.droprate_rate)
@@ -181,7 +181,7 @@ class Discriminator(nn.Module):
             nn.init.constant_(m.weight, 1.0)
 
     def forward(self, x):
-
+        x = DiffAugment(x)
         b = x.shape[0]
         cls_token = self.class_embedding.expand(b, -1, -1)
 
@@ -193,3 +193,4 @@ class Discriminator(nn.Module):
         x = self.norm(x)
         x = self.out(x[:, 0])
         return x
+    

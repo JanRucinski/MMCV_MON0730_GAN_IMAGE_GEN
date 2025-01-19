@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QPixmap, QIcon
 from PyQt6.QtCore import QSize
 
+from generate import generate_and_save
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -39,7 +41,7 @@ class MainWindow(QMainWindow):
                 # os.remove(file_path)
 
         # Generate new images and save into 'img' folder in png/jpg/whatever
-
+        generate_and_save()
         images = os.listdir('img')
         images = images[:25]
 

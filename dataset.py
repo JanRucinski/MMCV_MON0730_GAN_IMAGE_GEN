@@ -9,7 +9,7 @@ img_path = "images\\input\\data"
 
 
 def get_dataset():
-    with torch.device('cuda:0'):
+    with torch.device('cpu'):
         dataset = datasets.ImageFolder(
             root=img_path,
             transform=torchvision.transforms.Compose([
@@ -19,9 +19,6 @@ def get_dataset():
                 torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
             ])
         )
-        dataset = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, generator=torch.Generator('cuda:0').manual_seed(2137))
+        dataset = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True,    drop_last=True)#, generator=torch.Generator('cuda:0').manual_seed(2137))
         return dataset
     
-
-def data_augumentation():
-    pass
