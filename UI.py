@@ -38,10 +38,11 @@ class MainWindow(QMainWindow):
         else:
             for file_name in os.listdir('img'):
                 file_path = os.path.join('img', file_name)
-                # os.remove(file_path)
+                os.remove(file_path)
 
         # Generate new images and save into 'img' folder in png/jpg/whatever
-        generate_and_save()
+        for i in range(25):
+            generate_and_save()
         images = os.listdir('img')
         images = images[:25]
 
